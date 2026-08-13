@@ -132,6 +132,8 @@ function worthwhile(text, minimum) {
 function needsVisibleStatus(text) {
   const value = (text ?? "").trim();
   if (!value || value.startsWith("/")) return false;
+  if (/^(?:please\s+)?(?:remind me|set (?:me )?a reminder|don['’]?t let me forget)\b/i.test(value)) return false;
+  if (/^(?:huh[,.!? ]*)?(?:why|how so|what do you mean)[.!? ]*$/i.test(value)) return false;
   return !/^(?:hi|hey|hello|yo|sup|thanks?|thank you|ok(?:ay)?|cool|nice|great|lol|yes|no|yep|nope|sure|done|finished)[.!? ]*$/i.test(value);
 }
 

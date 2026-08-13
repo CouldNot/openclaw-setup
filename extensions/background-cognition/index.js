@@ -11,12 +11,12 @@ const STATUS_TIMEOUT_MS = 4200;
 const STATUS_WORK_GRACE_MS = 1800;
 const OPENCLAW_DIST = "__OPENCLAW_HOME__/.openclaw/tools/node-v24.15.0/lib/node_modules/openclaw/dist";
 const OPENCLAW_AGENT_DIR = "__OPENCLAW_HOME__/.openclaw/agents/main/agent";
-const STATUS_INSTRUCTIONS = `Write one short, natural acknowledgement to __OWNER_NAME__ while the main assistant performs real tool-backed work. Sound like a capable, familiar personal secretary.
-For an ordinary request, respond with a simple conversational variation of acknowledging it and asking for a moment. Do not repeat or paraphrase the request merely to appear personalized.
+const STATUS_INSTRUCTIONS = `Classify whether __OWNER_NAME__'s message probably requires noticeable work outside an immediate conversational answer. This includes retrieving current or external information, using personal memory, email, calendar, files, documents, web research, or tools. It excludes greetings, casual conversation, banter, reactions, information merely being shared, and questions answerable directly without retrieval.
+Also write one short, natural acknowledgement that would fit if such work is needed. Sound like a capable, familiar personal secretary. For an ordinary request, use a simple conversational variation of acknowledging it and asking for a moment. Do not repeat or paraphrase the request merely to appear personalized.
 Mention its subject only when that makes the acknowledgement clearer, more reassuring, or less ambiguous. Personalize selectively, not by default.
 Stay neutral about how the request will be handled. Do not claim a particular source or operation unless __OWNER_NAME__ explicitly requested it.
 Never answer the request, confirm or deny a fact, state a result, or imply that the work is complete. Do not invent a plan. Do not mention tools, plugins, models, routing, memory systems, or internal mechanics.
-Use no markdown. Output exactly one brief sentence. Vary acknowledgement wording naturally and avoid sounding theatrical, overly eager, formal, or repetitive.`;
+Output only compact JSON with exactly these fields: {"needs_work": boolean, "acknowledgement": string}. Use no markdown. Vary acknowledgement wording naturally and avoid sounding theatrical, overly eager, formal, or repetitive.`;
 
 class StatusSidecar {
   constructor(logger) {
@@ -170,6 +170,16 @@ async function createStatus(sessionKey, content) {
   state.messageId = message.id;
 }
 
+async function sendStatus(state, content) {
+  if (!content || state.cancelled || state.messageId || state.sending) return;
+  state.sending = true;
+  try {
+    await createStatus(state.key, content);
+  } finally {
+    state.sending = false;
+  }
+}
+
 async function clearStatus(sessionKey) {
   const state = pendingStatuses.get(sessionKey);
   if (!state) return;
@@ -198,7 +208,14 @@ export default {
           timer = setTimeout(() => reject(new Error("status generation timed out")), STATUS_TIMEOUT_MS);
         });
         const generated = (await Promise.race([statusSidecar.generate(text), timeout]))?.trim();
-        if (generated && generated.length <= 220) return generated;
+        const match = generated?.match(/\{[\s\S]*\}/);
+        const parsed = match ? JSON.parse(match[0]) : null;
+        if (typeof parsed?.needs_work === "boolean" && typeof parsed?.acknowledgement === "string") {
+          const acknowledgement = parsed.acknowledgement.trim();
+          if (acknowledgement && acknowledgement.length <= 220) {
+            return { needsWork: parsed.needs_work, content: acknowledgement };
+          }
+        }
       } catch (error) {
         api.logger.warn?.(`background-cognition: personalized status fallback: ${String(error)}`);
       } finally {
@@ -216,10 +233,17 @@ export default {
       const state = {
         key: statusKey, createdAt: Date.now(), cancelled: false, workStarted: false,
         channelId: null, messageId: null, workTimer: null,
-        content: personalizedStatus(event.content)
+        decision: personalizedStatus(event.content)
       };
       pendingStatuses.set(statusKey, state);
       api.logger.info?.(`background-cognition: acknowledgement candidate queued for ${statusKey}`);
+      void state.decision.then((decision) => {
+        state.content = decision?.content ?? null;
+        if (decision?.needsWork) {
+          api.logger.info?.(`background-cognition: semantic acknowledgement selected for ${state.key}`);
+          return sendStatus(state, state.content);
+        }
+      }).catch((error) => api.logger.warn?.(`background-cognition: semantic status failed: ${String(error)}`));
     }, { priority: 1000 });
 
     api.on("before_tool_call", async (_event, ctx) => {
@@ -229,8 +253,8 @@ export default {
       state.workStarted = true;
       state.workTimer = setTimeout(() => {
         if (state.cancelled || state.messageId) return;
-        void state.content
-          .then((content) => content && !state.cancelled ? createStatus(state.key, content) : undefined)
+        void state.decision
+          .then((decision) => sendStatus(state, decision?.content))
           .catch((error) => api.logger.warn?.(`background-cognition: status send failed: ${String(error)}`));
       }, STATUS_WORK_GRACE_MS);
       api.logger.info?.(`background-cognition: tool-backed acknowledgement armed for ${state.key}`);

@@ -6,18 +6,18 @@ const WARNING_PREFIX = "⚠️ 🛠️ ";
 const successfulRuns = new Map();
 const OWNER_DM = "agent:main:discord:default:direct:__OWNER_DISCORD_ID__";
 const OWNER_ID = "__OWNER_DISCORD_ID__";
-const STATUS_LABELS = ["On it…", "Let me check…", "Looking into it…", "One moment…"];
 const pendingStatuses = new Map();
 const STATUS_TIMEOUT_MS = 4200;
 const OPENCLAW_DIST = "__OPENCLAW_HOME__/.openclaw/tools/node-v24.15.0/lib/node_modules/openclaw/dist";
 const OPENCLAW_AGENT_DIR = "__OPENCLAW_HOME__/.openclaw/agents/main/agent";
-const STATUS_INSTRUCTIONS = `Write one short, natural acknowledgement to __OWNER_NAME__ before his request is handled. Sound like a capable, familiar personal secretary.
+const STATUS_INSTRUCTIONS = `Decide whether __OWNER_NAME__'s message needs a visible acknowledgement before the main assistant replies. A status is useful only when the request probably requires external retrieval, tools, personal-memory lookup, files, calendar, email, web research, or other work likely to create a noticeable wait.
+For greetings, casual conversation, banter, reactions, simple follow-up questions, information __OWNER_NAME__ is merely sharing, or requests the main assistant can answer directly, output exactly NO_STATUS. Do not acknowledge those messages separately.
+If visible work is likely, write one short, natural acknowledgement. Sound like a capable, familiar personal secretary.
 For an ordinary request, respond with a simple conversational variation of acknowledging it and asking for a moment. Do not repeat or paraphrase the request merely to appear personalized.
 Mention its subject only when that makes the acknowledgement clearer, more reassuring, or less ambiguous. Personalize selectively, not by default.
-If __OWNER_NAME__ is simply sharing information rather than asking for work, acknowledge it naturally without implying that any particular action has already been taken.
 Stay neutral about how the request will be handled. Do not claim a particular source or operation unless __OWNER_NAME__ explicitly requested it.
 Never answer the request, confirm or deny a fact, state a result, or imply that the work is complete. Do not invent a plan. Do not mention tools, plugins, models, routing, memory systems, or internal mechanics.
-Use no markdown. Output exactly one brief sentence. Vary the wording naturally and avoid sounding theatrical, overly eager, formal, or repetitive.`;
+Use no markdown. Output either exactly NO_STATUS or exactly one brief sentence. Vary acknowledgement wording naturally and avoid sounding theatrical, overly eager, formal, or repetitive.`;
 
 class StatusSidecar {
   constructor(logger) {
@@ -199,13 +199,14 @@ export default {
           timer = setTimeout(() => reject(new Error("status generation timed out")), STATUS_TIMEOUT_MS);
         });
         const generated = (await Promise.race([statusSidecar.generate(text), timeout]))?.trim();
+        if (generated === "NO_STATUS") return null;
         if (generated && generated.length <= 220) return generated;
       } catch (error) {
         api.logger.warn?.(`background-cognition: personalized status fallback: ${String(error)}`);
       } finally {
         clearTimeout(timer);
       }
-      return STATUS_LABELS[Math.floor(Math.random() * STATUS_LABELS.length)];
+      return null;
     }
 
     api.on("message_received", async (event, ctx) => {
@@ -218,7 +219,7 @@ export default {
       pendingStatuses.set(statusKey, state);
       api.logger.info?.(`background-cognition: immediate status queued for ${statusKey}`);
       void personalizedStatus(event.content)
-        .then((content) => createStatus(statusKey, content))
+        .then((content) => content ? createStatus(statusKey, content) : clearStatus(statusKey))
         .catch((error) => api.logger.warn?.(`background-cognition: status send failed: ${String(error)}`));
     }, { priority: 1000 });
 

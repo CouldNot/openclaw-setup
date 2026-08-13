@@ -8,16 +8,15 @@ const OWNER_DM = "agent:main:discord:default:direct:__OWNER_DISCORD_ID__";
 const OWNER_ID = "__OWNER_DISCORD_ID__";
 const pendingStatuses = new Map();
 const STATUS_TIMEOUT_MS = 4200;
+const STATUS_WORK_GRACE_MS = 1800;
 const OPENCLAW_DIST = "__OPENCLAW_HOME__/.openclaw/tools/node-v24.15.0/lib/node_modules/openclaw/dist";
 const OPENCLAW_AGENT_DIR = "__OPENCLAW_HOME__/.openclaw/agents/main/agent";
-const STATUS_INSTRUCTIONS = `Decide whether __OWNER_NAME__'s message needs a visible acknowledgement before the main assistant replies. A status is useful only when the request probably requires external retrieval, tools, personal-memory lookup, files, calendar, email, web research, or other work likely to create a noticeable wait.
-For greetings, casual conversation, banter, reactions, simple follow-up questions, information __OWNER_NAME__ is merely sharing, or requests the main assistant can answer directly, output exactly NO_STATUS. Do not acknowledge those messages separately.
-If visible work is likely, write one short, natural acknowledgement. Sound like a capable, familiar personal secretary.
+const STATUS_INSTRUCTIONS = `Write one short, natural acknowledgement to __OWNER_NAME__ while the main assistant performs real tool-backed work. Sound like a capable, familiar personal secretary.
 For an ordinary request, respond with a simple conversational variation of acknowledging it and asking for a moment. Do not repeat or paraphrase the request merely to appear personalized.
 Mention its subject only when that makes the acknowledgement clearer, more reassuring, or less ambiguous. Personalize selectively, not by default.
 Stay neutral about how the request will be handled. Do not claim a particular source or operation unless __OWNER_NAME__ explicitly requested it.
 Never answer the request, confirm or deny a fact, state a result, or imply that the work is complete. Do not invent a plan. Do not mention tools, plugins, models, routing, memory systems, or internal mechanics.
-Use no markdown. Output either exactly NO_STATUS or exactly one brief sentence. Vary acknowledgement wording naturally and avoid sounding theatrical, overly eager, formal, or repetitive.`;
+Use no markdown. Output exactly one brief sentence. Vary acknowledgement wording naturally and avoid sounding theatrical, overly eager, formal, or repetitive.`;
 
 class StatusSidecar {
   constructor(logger) {
@@ -129,12 +128,11 @@ function worthwhile(text, minimum) {
   return !/^(ok(?:ay)?|thanks?|thank you|cool|nice|great|lol|yes|no|yep|nope|sure|done|finished)[.! ]*$/i.test(value);
 }
 
-function needsVisibleStatus(text) {
-  const value = (text ?? "").trim();
-  if (!value || value.startsWith("/")) return false;
-  if (/^(?:please\s+)?(?:remind me|set (?:me )?a reminder|don['’]?t let me forget)\b/i.test(value)) return false;
-  if (/^(?:huh[,.!? ]*)?(?:why|how so|what do you mean)[.!? ]*$/i.test(value)) return false;
-  return !/^(?:hi|hey|hello|yo|sup|thanks?|thank you|ok(?:ay)?|cool|nice|great|lol|yes|no|yep|nope|sure|done|finished)[.!? ]*$/i.test(value);
+function pendingStatus(ctx = {}) {
+  const direct = pendingStatuses.get(ctx.runId) ?? pendingStatuses.get(ctx.sessionKey);
+  if (direct) return direct;
+  const now = Date.now();
+  return [...pendingStatuses.values()].reverse().find((state) => now - state.createdAt < 120000);
 }
 
 async function discordToken() {
@@ -176,6 +174,7 @@ async function clearStatus(sessionKey) {
   const state = pendingStatuses.get(sessionKey);
   if (!state) return;
   state.cancelled = true;
+  clearTimeout(state.workTimer);
   pendingStatuses.delete(sessionKey);
 }
 
@@ -199,7 +198,6 @@ export default {
           timer = setTimeout(() => reject(new Error("status generation timed out")), STATUS_TIMEOUT_MS);
         });
         const generated = (await Promise.race([statusSidecar.generate(text), timeout]))?.trim();
-        if (generated === "NO_STATUS") return null;
         if (generated && generated.length <= 220) return generated;
       } catch (error) {
         api.logger.warn?.(`background-cognition: personalized status fallback: ${String(error)}`);
@@ -213,20 +211,35 @@ export default {
       const sessionKey = event.sessionKey ?? ctx.sessionKey ?? "";
       const statusKey = event.runId ?? ctx.runId ?? sessionKey;
       const senderId = event.senderId ?? ctx.senderId ?? "";
-      if (!statusKey || senderId !== OWNER_ID || !needsVisibleStatus(event.content)) return;
+      if (!statusKey || senderId !== OWNER_ID || !event.content?.trim() || event.content.trim().startsWith("/")) return;
       await clearStatus(statusKey);
-      const state = { cancelled: false, channelId: null, messageId: null };
+      const state = {
+        key: statusKey, createdAt: Date.now(), cancelled: false, workStarted: false,
+        channelId: null, messageId: null, workTimer: null,
+        content: personalizedStatus(event.content)
+      };
       pendingStatuses.set(statusKey, state);
-      api.logger.info?.(`background-cognition: immediate status queued for ${statusKey}`);
-      void personalizedStatus(event.content)
-        .then((content) => content ? createStatus(statusKey, content) : clearStatus(statusKey))
-        .catch((error) => api.logger.warn?.(`background-cognition: status send failed: ${String(error)}`));
+      api.logger.info?.(`background-cognition: acknowledgement candidate queued for ${statusKey}`);
+    }, { priority: 1000 });
+
+    api.on("before_tool_call", async (_event, ctx) => {
+      if ((ctx.sessionKey ?? "").includes("background-cognition")) return;
+      const state = pendingStatus(ctx);
+      if (!state || state.cancelled || state.workStarted) return;
+      state.workStarted = true;
+      state.workTimer = setTimeout(() => {
+        if (state.cancelled || state.messageId) return;
+        void state.content
+          .then((content) => content && !state.cancelled ? createStatus(state.key, content) : undefined)
+          .catch((error) => api.logger.warn?.(`background-cognition: status send failed: ${String(error)}`));
+      }, STATUS_WORK_GRACE_MS);
+      api.logger.info?.(`background-cognition: tool-backed acknowledgement armed for ${state.key}`);
     }, { priority: 1000 });
 
     api.on("reply_payload_sending", async (event, ctx) => {
       cleanupRuns();
-      const statusKey = event.runId ?? ctx.runId ?? ctx.sessionKey ?? "";
-      if (statusKey) await clearStatus(statusKey);
+      const status = pendingStatus({ runId: event.runId ?? ctx.runId, sessionKey: ctx.sessionKey });
+      if (status) await clearStatus(status.key);
       const runId = event.runId ?? ctx.runId;
       const text = event.payload?.text?.trim() ?? "";
       const warning = text.startsWith(WARNING_PREFIX);
@@ -246,8 +259,8 @@ export default {
     }, { priority: 900 });
 
     api.on("agent_end", async (event, ctx) => {
-      const statusKey = event.runId ?? ctx.runId ?? ctx.sessionKey ?? "";
-      if (statusKey) await clearStatus(statusKey);
+      const status = pendingStatus({ runId: event.runId ?? ctx.runId, sessionKey: ctx.sessionKey });
+      if (status) await clearStatus(status.key);
       if (!event.success || ctx.jobId || ctx.trigger === "cron") return;
       const sessionKey = ctx.sessionKey ?? "";
       if (sessionKey.includes("background-cognition")) return;

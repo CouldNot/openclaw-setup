@@ -4,7 +4,9 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const SCRIPT = "__OPENCLAW_HOME__/.openclaw/workspace-personal/skills/second-brain/scripts/second_brain.py";
 const OPENCLAW = "__OPENCLAW_HOME__/.openclaw/bin/openclaw";
-const OWNER_SESSION = "agent:main:discord:default:direct:__OWNER_DISCORD_ID__";
+// OpenClaw's reminder verifier associates the primary personal conversation
+// with this canonical session. Discord delivery is configured separately.
+const OWNER_SESSION = "agent:main:main";
 const MAX_OUTPUT = 1024 * 1024;
 
 async function scheduleReminder(item, signal) {

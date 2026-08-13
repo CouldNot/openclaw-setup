@@ -1,0 +1,14 @@
+{
+  "id": "background-cognition",
+  "name": "Background Cognition",
+  "description": "Queues post-response memory enrichment and suppresses recovered tool warnings",
+  "contracts": { "hooks": ["message_received", "before_prompt_build", "agent_end", "reply_payload_sending"] },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "queuePath": { "type": "string" },
+      "minimumUserChars": { "type": "integer", "minimum": 1, "maximum": 1000 }
+    }
+  }
+}

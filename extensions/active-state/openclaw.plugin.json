@@ -1,0 +1,13 @@
+{
+  "id": "active-state",
+  "name": "Active State",
+  "description": "Read the owner's structured appointments, trips, deadlines, commitments, and unresolved current state",
+  "contracts": {
+    "tools": ["active_state"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

@@ -1,0 +1,218 @@
+{
+  "gateway": {
+    "mode": "local",
+    "bind": "loopback",
+    "port": 18789,
+    "auth": { "mode": "token", "token": "__GATEWAY_TOKEN__" },
+    "tailscale": { "mode": "off" }
+  },
+  "agents": {
+    "defaults": {
+      "model": { "primary": "openai/gpt-5.6-luna", "fallbacks": [] },
+      "workspace": "__OPENCLAW_HOME__/.openclaw/workspace-personal",
+      "sandbox": { "mode": "off" },
+      "models": {
+        "openai/gpt-5.6-sol": {},
+        "openai/gpt-5.6-luna": {},
+        "ollama/qwen3:8b": {}
+      },
+      "bootstrapMaxChars": 20000,
+      "bootstrapTotalMaxChars": 150000,
+      "contextInjection": "continuation-skip",
+      "contextTokens": 96000,
+      "thinkingDefault": "low",
+      "typingMode": "instant",
+      "compaction": {
+        "mode": "safeguard",
+        "timeoutSeconds": 180,
+        "reserveTokens": 16000,
+        "reserveTokensFloor": 12000,
+        "keepRecentTokens": 16000,
+        "recentTurnsPreserve": 4,
+        "maxHistoryShare": 0.55,
+        "identifierPolicy": "strict",
+        "qualityGuard": { "enabled": true, "maxRetries": 1 },
+        "midTurnPrecheck": { "enabled": true },
+        "postIndexSync": "async",
+        "model": "openai/gpt-5.6-luna",
+        "truncateAfterCompaction": true,
+        "maxActiveTranscriptBytes": "2mb",
+        "notifyUser": false,
+        "memoryFlush": { "enabled": false }
+      },
+      "contextPruning": {
+        "mode": "cache-ttl",
+        "ttl": "10m",
+        "keepLastAssistants": 4,
+        "softTrimRatio": 0.25,
+        "hardClearRatio": 0.4,
+        "minPrunableToolChars": 20000,
+        "softTrim": { "maxChars": 3000, "headChars": 1200, "tailChars": 1200 },
+        "hardClear": { "enabled": true, "placeholder": "[Old tool result content cleared; original remains in transcript]" }
+      },
+      "memorySearch": {
+        "enabled": true,
+        "sources": ["memory", "sessions"],
+        "extraPaths": ["USER.md"],
+        "provider": "ollama",
+        "model": "nomic-embed-text",
+        "fallback": "none",
+        "remote": {
+          "baseUrl": "http://127.0.0.1:11434",
+          "nonBatchConcurrency": 1,
+          "batch": { "enabled": false }
+        },
+        "store": {
+          "driver": "sqlite",
+          "fts": { "tokenizer": "unicode61" },
+          "vector": { "enabled": true }
+        },
+        "chunking": { "tokens": 400, "overlap": 80 },
+        "sync": {
+          "onSessionStart": true,
+          "onSearch": true,
+          "watch": true,
+          "watchDebounceMs": 1500,
+          "intervalMinutes": 15,
+          "embeddingBatchTimeoutSeconds": 600,
+          "sessions": { "deltaBytes": 20000, "deltaMessages": 10, "postCompactionForce": true }
+        },
+        "query": {
+          "maxResults": 8,
+          "minScore": 0.25,
+          "hybrid": {
+            "enabled": true,
+            "vectorWeight": 0.65,
+            "textWeight": 0.35,
+            "candidateMultiplier": 6,
+            "mmr": { "enabled": true, "lambda": 0.72 },
+            "temporalDecay": { "enabled": false, "halfLifeDays": 3650 }
+          }
+        },
+        "cache": { "enabled": true, "maxEntries": 100000 },
+        "experimental": { "sessionMemory": true }
+      },
+      "toolProgressDetail": "explain"
+    }
+  },
+  "memory": { "backend": "builtin", "citations": "off" },
+  "channels": {
+    "discord": {
+      "enabled": true,
+      "token": "${DISCORD_BOT_TOKEN}",
+      "dmPolicy": "pairing",
+      "groupPolicy": "allowlist",
+      "guilds": {
+        "__DISCORD_GUILD_ID__": { "requireMention": false, "users": ["__OWNER_DISCORD_ID__"] }
+      },
+      "streaming": { "mode": "off" }
+    }
+  },
+  "commands": { "ownerAllowFrom": ["discord:__OWNER_DISCORD_ID__"] },
+  "tools": {
+    "profile": "full",
+    "exec": { "strictInlineEval": true, "host": "gateway", "mode": "auto" },
+    "elevated": { "enabled": false },
+    "loopDetection": { "enabled": true },
+    "alsoAllow": ["active_state", "gmail_read"],
+    "web": {
+      "search": {
+        "enabled": true,
+        "provider": "codex",
+        "maxResults": 6,
+        "timeoutSeconds": 30,
+        "cacheTtlMinutes": 15,
+        "openaiCodex": {
+          "enabled": true,
+          "mode": "live",
+          "contextSize": "medium",
+          "userLocation": { "timezone": "__OWNER_TIMEZONE__" }
+        }
+      },
+      "fetch": {
+        "enabled": true,
+        "maxChars": 20000,
+        "maxCharsCap": 40000,
+        "maxResponseBytes": 1000000,
+        "timeoutSeconds": 30,
+        "cacheTtlMinutes": 15,
+        "maxRedirects": 3,
+        "readability": true,
+        "useTrustedEnvProxy": false,
+        "ssrfPolicy": { "allowRfc2544BenchmarkRange": false, "allowIpv6UniqueLocalRange": false },
+        "firecrawl": { "enabled": false }
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "ollama": {
+        "baseUrl": "http://127.0.0.1:11434",
+        "apiKey": "ollama-local",
+        "api": "ollama",
+        "timeoutSeconds": 420,
+        "contextWindow": 16384,
+        "maxTokens": 2048,
+        "models": [{
+          "id": "qwen3:8b",
+          "name": "qwen3:8b",
+          "input": ["text"],
+          "params": { "num_ctx": 16384, "keep_alive": "0", "thinking": false }
+        }],
+        "params": { "num_ctx": 16384 }
+      }
+    }
+  },
+  "plugins": {
+    "bundledDiscovery": "compat",
+    "allow": ["active-state", "background-cognition", "codex", "discord", "document-extract", "gmail-readonly", "memory-core", "memory-wiki", "ollama", "openai"],
+    "entries": {
+      "discord": { "enabled": true },
+      "openai": { "enabled": true },
+      "codex": {
+        "enabled": true,
+        "config": { "appServer": { "mode": "guardian", "sandbox": "danger-full-access", "approvalPolicy": "on-request", "approvalsReviewer": "auto_review", "experimental": { "sandboxExecServer": false } } }
+      },
+      "memory-core": {
+        "config": {
+          "dreaming": {
+            "enabled": true,
+            "frequency": "0 3 * * *",
+            "timezone": "__OWNER_TIMEZONE__",
+            "verboseLogging": true,
+            "storage": { "mode": "both", "separateReports": true },
+            "execution": { "defaults": { "model": "openai/gpt-5.6-luna" } },
+            "phases": {
+              "light": { "enabled": true, "lookbackDays": 3, "limit": 30, "dedupeSimilarity": 0.9 },
+              "rem": { "enabled": true, "lookbackDays": 30, "limit": 20, "minPatternStrength": 0.7 },
+              "deep": { "enabled": true, "limit": 10, "minScore": 0.78, "minRecallCount": 2, "minUniqueQueries": 2, "recencyHalfLifeDays": 180, "maxAgeDays": 3650, "maxPromotedSnippetTokens": 180 }
+            }
+          }
+        }
+      },
+      "ollama": { "enabled": true },
+      "memory-wiki": {
+        "enabled": true,
+        "config": {
+          "vaultMode": "bridge",
+          "vault": { "path": "__OPENCLAW_HOME__/.openclaw/workspace-personal/memory/wiki", "renderMode": "native" },
+          "obsidian": { "enabled": false, "useOfficialCli": false, "openAfterWrites": false },
+          "bridge": { "enabled": true, "readMemoryArtifacts": true, "indexDreamReports": true, "indexDailyNotes": true, "indexMemoryRoot": true, "followMemoryEvents": true },
+          "ingest": { "autoCompile": true, "maxConcurrentJobs": 1, "allowUrlIngest": false },
+          "search": { "backend": "shared", "corpus": "all" },
+          "context": { "includeCompiledDigestPrompt": true },
+          "render": { "preserveHumanBlocks": true, "createBacklinks": true, "createDashboards": true }
+        }
+      },
+      "document-extract": { "enabled": true },
+      "gmail-readonly": { "enabled": true },
+      "active-state": { "enabled": true },
+      "background-cognition": {
+        "enabled": true,
+        "hooks": { "allowConversationAccess": true },
+        "config": { "queuePath": "__OPENCLAW_HOME__/.openclaw/workspace-personal/memory/knowledge/cognition-queue.jsonl", "minimumUserChars": 12 }
+      }
+    }
+  },
+  "skills": { "workshop": { "approvalPolicy": "pending" } }
+}

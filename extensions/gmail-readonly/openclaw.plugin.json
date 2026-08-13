@@ -1,0 +1,13 @@
+{
+  "id": "gmail-readonly",
+  "name": "Gmail Read Only",
+  "description": "Narrow host-side Gmail search and message retrieval",
+  "contracts": {
+    "tools": ["gmail_read"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

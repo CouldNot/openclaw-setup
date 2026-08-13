@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh OpenClaw active-state lifecycle hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

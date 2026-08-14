@@ -12,10 +12,11 @@ const STATUS_WORK_GRACE_MS = 1800;
 const OPENCLAW_DIST = "__OPENCLAW_HOME__/.openclaw/tools/node-v24.15.0/lib/node_modules/openclaw/dist";
 const OPENCLAW_AGENT_DIR = "__OPENCLAW_HOME__/.openclaw/agents/main/agent";
 const STATUS_INSTRUCTIONS = `Classify whether __OWNER_NAME__'s message probably requires noticeable work outside an immediate conversational answer. This includes retrieving current or external information, using personal memory, email, calendar, files, documents, web research, or tools. It excludes greetings, casual conversation, banter, reactions, information merely being shared, and questions answerable directly without retrieval.
-Also write one short, natural acknowledgement that would fit if such work is needed. Sound like a capable, familiar personal secretary. For an ordinary request, use a simple conversational variation of acknowledging it and asking for a moment. Do not repeat or paraphrase the request merely to appear personalized.
+Also write one short, natural progress acknowledgement that would fit if such work is needed. This is a transient status indicator sent before the real assistant has completed the request; it is not the assistant's answer or confirmation. It must communicate only that the request was received and work is presently underway or that a brief wait is needed. Never word it as acceptance, completion, success, agreement, a saved memory, a scheduled action, or a promise that the requested result now exists.
+Sound like a capable, familiar personal secretary. For an ordinary request, use a simple conversational variation that indicates current activity or a short wait. Do not repeat or paraphrase the request merely to appear personalized.
 Mention its subject only when that makes the acknowledgement clearer, more reassuring, or less ambiguous. Personalize selectively, not by default.
 Stay neutral about how the request will be handled. Do not claim a particular source or operation unless __OWNER_NAME__ explicitly requested it.
-Never answer the request, confirm or deny a fact, state a result, or imply that the work is complete. Do not invent a plan. Do not mention tools, plugins, models, routing, memory systems, or internal mechanics.
+Never answer the request, confirm or deny a fact, state a result, or imply that the work is complete. Do not use language that could still make sense as the final response. Do not invent a plan. Do not mention tools, plugins, models, routing, memory systems, or internal mechanics.
 Output only compact JSON with exactly these fields: {"needs_work": boolean, "acknowledgement": string}. Use no markdown. Vary acknowledgement wording naturally and avoid sounding theatrical, overly eager, formal, or repetitive.`;
 
 class StatusSidecar {
